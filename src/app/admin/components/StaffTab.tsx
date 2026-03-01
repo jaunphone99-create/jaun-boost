@@ -55,7 +55,7 @@ export default function StaffTab({ staffList, setStaffList, adminRole, canEdit, 
             return;
         }
         const result = await addStaff({ employee_id: staffId.trim(), employee_name: staffName.trim(), role: staffRole, password: staffPassword.trim() || '1234', permissions: staffPermissions });
-        if (!result.success) { showToastMsg('⚠️ เบอร์โทรซ้ำ'); return; }
+        if (!result.success) { showToastMsg(`⚠️ ${result.error || 'เพิ่มไม่สำเร็จ'}`); return; }
         setStaffList(await getStaff()); closeStaffForm(); showToastMsg('✅ เพิ่มพนักงานเรียบร้อย');
     }
 

@@ -84,7 +84,7 @@ export async function getStaff(): Promise<Staff[]> {
     return list;
 }
 
-export async function addStaff(staff: Staff & { password?: string }): Promise<{ success: boolean }> {
+export async function addStaff(staff: Staff & { password?: string }): Promise<{ success: boolean; error?: string }> {
     if (isSupabaseMode()) {
         try {
             const { error } = await supabase!.from('staff').insert({
@@ -95,15 +95,18 @@ export async function addStaff(staff: Staff & { password?: string }): Promise<{ 
                 permissions: staff.permissions || getDefaultPermissions(staff.role || 'viewer'),
             });
             if (!error) return { success: true };
-            return { success: false };
-        } catch {
-            console.warn('Supabase failed, falling back to localStorage');
+            console.error('Supabase addStaff error:', error.message, error.code);
+            if (error.code === '23505') return { success: false, error: 'เบอร์โทรซ้ำ' };
+            if (error.code === '42501') return { success: false, error: 'ไม่มีสิทธิ์เพิ่มข้อมูล (RLS Policy)' };
+            return { success: false, error: error.message };
+        } catch (e) {
+            console.warn('Supabase failed, falling back to localStorage', e);
         }
     }
 
     const list = await getStaff();
     if (list.find((s) => s.employee_id === staff.employee_id)) {
-        return { success: false };
+        return { success: false, error: 'เบอร์โทรซ้ำ' };
     }
     list.push({ ...staff, role: staff.role || 'viewer', password: staff.password || '1234' });
     localStorage.setItem(STAFF_KEY, JSON.stringify(list));
