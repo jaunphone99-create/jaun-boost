@@ -69,6 +69,7 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState('ทั้งหมด');
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [isAgreed, setIsAgreed] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [notification, setNotification] = useState<{ msg: string; type: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [evidencePhoto, setEvidencePhoto] = useState<string | null>(null);
@@ -297,28 +298,36 @@ export default function HomePage() {
   };
 
   const confirmCheckout = async () => {
-    if (!isAgreed) return;
+    if (!isAgreed || checkoutLoading) return;
+    setCheckoutLoading(true);
 
-    // Withdraw products (decreases stock + creates transaction records)
-    const cartItems = Object.entries(cart).map(([id, qty]) => ({
-      product: products.find((p) => p.id === id)!,
-      quantity: qty,
-    })).filter(item => item.product);
-    await withdrawProducts(currentUser?.name || 'Unknown', cartItems, evidencePhoto);
+    try {
+      // Withdraw products (decreases stock + creates transaction records)
+      const cartItems = Object.entries(cart).map(([id, qty]) => ({
+        product: products.find((p) => p.id === id)!,
+        quantity: qty,
+      })).filter(item => item.product);
+      await withdrawProducts(currentUser?.name || 'Unknown', cartItems, evidencePhoto);
 
-    setCart({});
-    setShowRulesModal(false);
-    setEvidencePhoto(null);
-    showNotice('เบิกอาหารสำเร็จ!');
-    // Show motivational popup
-    const randomMsg = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)];
-    setMotivationalMsg(randomMsg);
-    // Increment user withdrawal count
-    if (currentUser?.phone) {
-      await incrementUserWithdrawals(currentUser.phone);
+      setCart({});
+      setShowRulesModal(false);
+      setEvidencePhoto(null);
+      showNotice('เบิกอาหารสำเร็จ!');
+      // Show motivational popup
+      const randomMsg = motivationalMessages[Math.floor(Math.random() * motivationalMessages.length)];
+      setMotivationalMsg(randomMsg);
+      // Increment user withdrawal count
+      if (currentUser?.phone) {
+        await incrementUserWithdrawals(currentUser.phone);
+      }
+      // Refresh products + transactions
+      await loadData();
+    } catch (err) {
+      console.error('Checkout error:', err);
+      showNotice('เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+      setCheckoutLoading(false);
     }
-    // Refresh products + transactions
-    await loadData();
   };
 
   const updateStock = async (id: string, amount: number) => {
@@ -912,10 +921,10 @@ export default function HomePage() {
                   </label>
                   <button
                     onClick={confirmCheckout}
-                    disabled={!isAgreed || !evidencePhoto}
+                    disabled={!isAgreed || !evidencePhoto || checkoutLoading}
                     className="jb-confirm-btn"
                   >
-                    <CheckCircle2 size={18} /> ยืนยันเบิกอาหาร
+                    {checkoutLoading ? '⏳ กำลังบันทึก...' : <><CheckCircle2 size={18} /> ยืนยันเบิกอาหาร</>}
                   </button>
                 </div>
               )}
