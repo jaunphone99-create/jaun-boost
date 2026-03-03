@@ -128,6 +128,25 @@ export async function withdrawProducts(
                     });
                 }
             }
+
+            // Fire-and-forget LINE Notify
+            try {
+                const notifyItems = [];
+                for (const item of items) {
+                    const { data: latest } = await supabase!.from('products').select('stock_quantity').eq('id', item.product.id).single();
+                    notifyItems.push({
+                        name: item.product.name,
+                        quantity: item.quantity,
+                        remaining: latest?.stock_quantity ?? '?',
+                    });
+                }
+                fetch('/api/line-notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userName, items: notifyItems, timestamp: Date.now() }),
+                }).catch(() => { });
+            } catch { }
+
             return { success: true, message: 'เบิกสำเร็จ' };
         } catch { console.warn('Supabase failed, falling back to localStorage'); }
     }
