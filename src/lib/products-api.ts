@@ -103,8 +103,10 @@ export async function withdrawProducts(
                 const txId = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
                 if (p.tracking_mode === 'usage') {
+                    // Fetch current usage_count from DB
+                    const { data: currentProduct } = await supabase!.from('products').select('usage_count').eq('id', p.id).single();
                     await supabase!.from('products').update({
-                        usage_count: (p.usage_count || 0) + 1,
+                        usage_count: ((currentProduct?.usage_count) || 0) + 1,
                     }).eq('id', p.id);
                     await supabase!.from('transactions').insert({
                         id: txId, user_name: userName, product_name: p.name,
@@ -112,7 +114,10 @@ export async function withdrawProducts(
                         photo: photoUrl,
                     });
                 } else {
-                    const newStock = Math.max(0, p.stock_quantity - item.quantity);
+                    // Fetch CURRENT stock from DB to avoid race condition
+                    const { data: currentProduct } = await supabase!.from('products').select('stock_quantity').eq('id', p.id).single();
+                    const currentStock = currentProduct?.stock_quantity ?? p.stock_quantity;
+                    const newStock = Math.max(0, currentStock - item.quantity);
                     await supabase!.from('products').update({
                         stock_quantity: newStock,
                     }).eq('id', p.id);

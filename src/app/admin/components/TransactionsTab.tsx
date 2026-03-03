@@ -68,15 +68,27 @@ export default function TransactionsTab({ transactions, products, setTransaction
     const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [filterProduct, setFilterProduct] = useState('');
 
     const { start, end, label: periodLabel } = getDateRange(periodType, periodYear, periodValue, periodType === 'day' ? dayDate : customStart, customEnd);
     const filteredTransactions = useMemo(() =>
         transactions.filter(t => {
             const d = new Date(t.created_at);
-            return d >= start && d <= end;
+            const inPeriod = d >= start && d <= end;
+            const matchProduct = !filterProduct || t.item_name === filterProduct;
+            return inPeriod && matchProduct;
         }),
-        [transactions, start.getTime(), end.getTime()]
+        [transactions, start.getTime(), end.getTime(), filterProduct]
     );
+
+    // Unique product names for filter dropdown
+    const productNames = useMemo(() => {
+        const names = new Set(transactions.filter(t => {
+            const d = new Date(t.created_at);
+            return d >= start && d <= end;
+        }).map(t => t.item_name));
+        return Array.from(names).sort();
+    }, [transactions, start.getTime(), end.getTime()]);
 
     const totalWithdraw = filteredTransactions.filter(t => t.type === 'WITHDRAW').length;
     const totalRestock = filteredTransactions.filter(t => t.type === 'RESTOCK').length;
@@ -175,6 +187,29 @@ export default function TransactionsTab({ transactions, products, setTransaction
                     </>
                 )}
                 <span style={{ marginLeft: 'auto', fontSize: '13px', color: '#94a3b8', fontStyle: 'italic' }}>{periodLabel}</span>
+            </div>
+
+            {/* Product Filter */}
+            <div className="adm-card" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>🔍 กรองสินค้า:</span>
+                <select
+                    value={filterProduct}
+                    onChange={(e) => { setFilterProduct(e.target.value); setCurrentPage(1); }}
+                    style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', background: '#f8fafc', minWidth: '200px' }}
+                >
+                    <option value="">ทั้งหมด ({productNames.length} รายการ)</option>
+                    {productNames.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                    ))}
+                </select>
+                {filterProduct && (
+                    <button
+                        onClick={() => { setFilterProduct(''); setCurrentPage(1); }}
+                        style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fee2e2', color: '#dc2626', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                        ✕ ล้างตัวกรอง
+                    </button>
+                )}
             </div>
 
             {/* Summary Stats */}
