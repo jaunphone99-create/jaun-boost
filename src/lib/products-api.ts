@@ -248,11 +248,25 @@ export async function getAllTransactions(): Promise<Transaction[]> {
 export async function deleteTransaction(id: string): Promise<{ success: boolean }> {
     if (isSupabaseMode()) {
         try {
-            // Fetch the transaction first to get user_name
-            const { data: txData } = await supabase!.from('transactions').select('user_name').eq('id', id).single();
+            // Fetch the full transaction data before deleting
+            const { data: txData } = await supabase!.from('transactions')
+                .select('user_name, product_name, quantity, type')
+                .eq('id', id).single();
 
             const { error } = await supabase!.from('transactions').delete().eq('id', id);
             if (!error) {
+                // Restore stock if it was a withdrawal
+                if (txData && (txData.type === 'withdraw' || txData.type === 'WITHDRAW')) {
+                    const { data: productData } = await supabase!.from('products')
+                        .select('id, stock_quantity')
+                        .eq('name', txData.product_name)
+                        .single();
+                    if (productData) {
+                        await supabase!.from('products').update({
+                            stock_quantity: (productData.stock_quantity || 0) + (txData.quantity || 1),
+                        }).eq('id', productData.id);
+                    }
+                }
                 // Decrement user withdrawal count
                 if (txData?.user_name) {
                     const { data: userData } = await supabase!.from('service_users')
@@ -273,12 +287,21 @@ export async function deleteTransaction(id: string): Promise<{ success: boolean 
     const txToDelete = txns.find((t) => t.id === id);
     const filtered = txns.filter((t) => t.id !== id);
     saveLocalTransactions(filtered);
-    // Decrement user withdrawal count in localStorage
     if (txToDelete) {
+        // Restore stock if it was a withdrawal
+        if (txToDelete.type === 'WITHDRAW') {
+            const products = getLocalProducts();
+            const pIdx = products.findIndex((p) => p.id === txToDelete.product_id || p.name === txToDelete.item_name);
+            if (pIdx !== -1) {
+                products[pIdx].stock_quantity = (products[pIdx].stock_quantity || 0) + (txToDelete.amount || 1);
+                saveLocalProducts(products);
+            }
+        }
+        // Decrement user withdrawal count in localStorage
         const usersStr = localStorage.getItem('kiattisakUsers');
         if (usersStr) {
             const users = JSON.parse(usersStr);
-            const user = users.find((u: { name: string }) => u.name === txToDelete.item_name);
+            const user = users.find((u: { name: string }) => u.name === txToDelete.user_name);
             if (user) {
                 user.total_withdrawals = Math.max(0, (user.total_withdrawals || 1) - 1);
                 localStorage.setItem('kiattisakUsers', JSON.stringify(users));

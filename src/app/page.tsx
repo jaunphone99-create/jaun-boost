@@ -136,6 +136,7 @@ export default function HomePage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const rulesScrollRef = useRef<HTMLDivElement>(null);
+  const checkoutLockRef = useRef(false); // Synchronous lock to prevent double-tap
   const [hasScrolledRules, setHasScrolledRules] = useState(false);
   const [welfareRules, setWelfareRules] = useState<RuleSection[]>(loadWelfareRules);
 
@@ -299,6 +300,9 @@ export default function HomePage() {
 
   const confirmCheckout = async () => {
     if (!isAgreed || checkoutLoading) return;
+    // Synchronous ref lock — prevents double-tap on mobile
+    if (checkoutLockRef.current) return;
+    checkoutLockRef.current = true;
     setCheckoutLoading(true);
 
     try {
@@ -327,6 +331,7 @@ export default function HomePage() {
       showNotice('เกิดข้อผิดพลาด กรุณาลองใหม่');
     } finally {
       setCheckoutLoading(false);
+      checkoutLockRef.current = false;
     }
   };
 

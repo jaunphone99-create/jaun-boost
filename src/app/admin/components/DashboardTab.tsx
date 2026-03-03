@@ -100,7 +100,7 @@ export default function DashboardTab({ products, transactions, expenses, formatD
     const topUsers = useMemo(() => {
         const map: Record<string, number> = {};
         filteredTransactions.filter(t => t.type === 'WITHDRAW').forEach(t => {
-            map[t.user_name] = (map[t.user_name] || 0) + 1;
+            map[t.user_name] = (map[t.user_name] || 0) + t.amount;
         });
         return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
     }, [filteredTransactions]);
@@ -322,7 +322,7 @@ export default function DashboardTab({ products, transactions, expenses, formatD
                             <span style={{ width: 22, height: 22, borderRadius: '50%', background: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#cd7f32' : '#e2e8f0', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>{i + 1}</span>
                             <span style={{ flexShrink: 0 }}>{renderProductImage(p.image, 28)}</span>
                             <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#ea580c' }}>{p.count} ครั้ง</span>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#ea580c' }}>{p.count} ชิ้น</span>
                         </div>
                     )) : <div className="adm-empty-small">📋 ยังไม่มีข้อมูลช่วงนี้</div>}
                 </div>
@@ -335,7 +335,7 @@ export default function DashboardTab({ products, transactions, expenses, formatD
                             <span style={{ width: 22, height: 22, borderRadius: '50%', background: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#cd7f32' : '#e2e8f0', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>{i + 1}</span>
                             <span style={{ width: 28, height: 28, borderRadius: '50%', background: '#eff6ff', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>👤</span>
                             <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</span>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#3b82f6' }}>{u.count} ครั้ง</span>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#3b82f6' }}>{u.count} ชิ้น</span>
                         </div>
                     )) : <div className="adm-empty-small">📋 ยังไม่มีข้อมูลช่วงนี้</div>}
                 </div>

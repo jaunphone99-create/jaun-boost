@@ -91,8 +91,13 @@ export default function TransactionsTab({ transactions, products, setTransaction
     }, [products]);
 
     async function handleDeleteTransaction(id: string) {
+        const tx = transactions.find(t => t.id === id);
         await deleteTransaction(id);
-        showToastMsg('🗑️ ลบรายการแล้ว');
+        if (tx && tx.type === 'WITHDRAW') {
+            showToastMsg(`🗑️ ลบรายการแล้ว — คืนสต๊อก ${tx.item_name} +${tx.amount} ชิ้น`);
+        } else {
+            showToastMsg('🗑️ ลบรายการแล้ว');
+        }
         setTransactions(await getAllTransactions());
     }
 
