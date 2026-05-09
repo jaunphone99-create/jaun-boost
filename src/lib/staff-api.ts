@@ -84,7 +84,7 @@ export async function getStaff(): Promise<Staff[]> {
     return list;
 }
 
-export async function addStaff(staff: Staff & { password?: string }): Promise<{ success: boolean }> {
+export async function addStaff(staff: Staff & { password?: string }): Promise<{ success: boolean; error?: string }> {
     if (isSupabaseMode()) {
         try {
             const { error } = await supabase!.from('staff').insert({
@@ -95,7 +95,7 @@ export async function addStaff(staff: Staff & { password?: string }): Promise<{ 
                 permissions: staff.permissions || getDefaultPermissions(staff.role || 'viewer'),
             });
             if (!error) return { success: true };
-            return { success: false };
+            return { success: false, error: error.message || 'เพิ่มไม่สำเร็จ' };
         } catch {
             console.warn('Supabase failed, falling back to localStorage');
         }
@@ -103,7 +103,7 @@ export async function addStaff(staff: Staff & { password?: string }): Promise<{ 
 
     const list = await getStaff();
     if (list.find((s) => s.employee_id === staff.employee_id)) {
-        return { success: false };
+        return { success: false, error: 'รหัสพนักงานนี้มีอยู่แล้ว' };
     }
     list.push({ ...staff, role: staff.role || 'viewer', password: staff.password || '1234' });
     localStorage.setItem(STAFF_KEY, JSON.stringify(list));
