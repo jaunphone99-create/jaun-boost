@@ -69,8 +69,8 @@ export default function DashboardTab({ products, transactions, expenses, formatD
         transactions.filter(t => { const d = new Date(t.created_at); return d >= start && d <= end; }),
         [transactions, start.getTime(), end.getTime()]
     );
-    const periodWithdraw = filteredTransactions.filter(t => t.type === 'WITHDRAW').length;
-    const periodRestock = filteredTransactions.filter(t => t.type === 'RESTOCK').length;
+    const periodWithdraw = filteredTransactions.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').length;
+    const periodRestock = filteredTransactions.filter(t => t.type?.toUpperCase() === 'RESTOCK' || t.type?.toLowerCase() === 'restock').length;
 
     // ===== TODAY vs YESTERDAY =====
     const todayStr = now.toISOString().split('T')[0];
@@ -78,14 +78,14 @@ export default function DashboardTab({ products, transactions, expenses, formatD
     const yesterdayStr = yesterday.toISOString().split('T')[0];
     const todayTxns = transactions.filter(t => t.created_at.startsWith(todayStr));
     const yesterdayTxns = transactions.filter(t => t.created_at.startsWith(yesterdayStr));
-    const todayCount = todayTxns.filter(t => t.type === 'WITHDRAW').length;
-    const yesterdayCount = yesterdayTxns.filter(t => t.type === 'WITHDRAW').length;
+    const todayCount = todayTxns.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').length;
+    const yesterdayCount = yesterdayTxns.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').length;
     const diff = todayCount - yesterdayCount;
 
     // ===== TOP 5 Products =====
     const topProducts = useMemo(() => {
         const map: Record<string, { name: string; count: number; image?: string }> = {};
-        filteredTransactions.filter(t => t.type === 'WITHDRAW').forEach(t => {
+        filteredTransactions.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').forEach(t => {
             const key = t.item_name;
             if (!map[key]) {
                 const p = products.find(pr => pr.name === key);
@@ -99,7 +99,7 @@ export default function DashboardTab({ products, transactions, expenses, formatD
     // ===== TOP 5 Users =====
     const topUsers = useMemo(() => {
         const map: Record<string, number> = {};
-        filteredTransactions.filter(t => t.type === 'WITHDRAW').forEach(t => {
+        filteredTransactions.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').forEach(t => {
             map[t.user_name] = (map[t.user_name] || 0) + t.amount;
         });
         return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
@@ -128,8 +128,8 @@ export default function DashboardTab({ products, transactions, expenses, formatD
             days.push({
                 label: dLabel,
                 date: dateStr,
-                withdraw: dayTx.filter(t => t.type === 'WITHDRAW').length,
-                restock: dayTx.filter(t => t.type === 'RESTOCK').length,
+                withdraw: dayTx.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').length,
+                restock: dayTx.filter(t => t.type?.toUpperCase() === 'RESTOCK' || t.type?.toLowerCase() === 'restock').length,
             });
         }
         return days;
@@ -157,7 +157,7 @@ export default function DashboardTab({ products, transactions, expenses, formatD
         stock: products.filter(p => p.category === cat).reduce((s, p) => s + p.stock_quantity, 0),
         withdrawn: filteredTransactions.filter(t => {
             const p = products.find(pr => pr.name === t.item_name);
-            return p?.category === cat && t.type === 'WITHDRAW';
+            return p?.category === cat && (t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage');
         }).reduce((s, t) => s + t.amount, 0),
     }));
 
@@ -168,8 +168,8 @@ export default function DashboardTab({ products, transactions, expenses, formatD
     const lastWeekEnd = new Date(thisWeekStart); lastWeekEnd.setMilliseconds(-1);
     const thisWeekTx = transactions.filter(t => new Date(t.created_at) >= thisWeekStart);
     const lastWeekTx = transactions.filter(t => { const d = new Date(t.created_at); return d >= lastWeekStart && d <= lastWeekEnd; });
-    const thisWeekW = thisWeekTx.filter(t => t.type === 'WITHDRAW').length;
-    const lastWeekW = lastWeekTx.filter(t => t.type === 'WITHDRAW').length;
+    const thisWeekW = thisWeekTx.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').length;
+    const lastWeekW = lastWeekTx.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').length;
     const weekDiff = thisWeekW - lastWeekW;
 
     // ===== Inactive Products (no withdrawal in 7+ days) =====
@@ -440,7 +440,7 @@ export default function DashboardTab({ products, transactions, expenses, formatD
                 <div style={sectionStyle}>
                     <div style={sectionTitle}>💤 สินค้าไม่มีคนเบิก (7 วัน)</div>
                     {inactiveProducts.length > 0 ? inactiveProducts.map((p, i) => {
-                        const lastTx = transactions.find(t => t.item_name === p.name && t.type === 'WITHDRAW');
+                        const lastTx = transactions.find(t => t.item_name === p.name && (t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage'));
                         const daysAgo = lastTx ? Math.floor((now.getTime() - new Date(lastTx.created_at).getTime()) / 86400000) : null;
                         return (
                             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: i < inactiveProducts.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
@@ -522,8 +522,8 @@ export default function DashboardTab({ products, transactions, expenses, formatD
                                         <td><span className="adm-user-badge">{tx.user_name}</span></td>
                                         <td>{tx.item_name}</td>
                                         <td>
-                                            <span className={`adm-type-badge ${tx.type === 'WITHDRAW' ? 'withdraw' : 'restock'}`}>
-                                                {tx.type === 'WITHDRAW' ? 'เบิก' : 'เติม'}
+                                            <span className={`adm-type-badge ${(tx.type?.toUpperCase() === 'WITHDRAW' || tx.type?.toLowerCase() === 'withdraw' || tx.type?.toLowerCase() === 'usage') ? 'withdraw' : 'restock'}`}>
+                                                {(tx.type?.toUpperCase() === 'WITHDRAW' || tx.type?.toLowerCase() === 'withdraw' || tx.type?.toLowerCase() === 'usage') ? 'เบิก' : 'เติม'}
                                             </span>
                                         </td>
                                         <td className="adm-td-number">{tx.amount}</td>

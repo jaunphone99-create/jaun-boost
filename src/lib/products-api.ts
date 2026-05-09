@@ -1,24 +1,18 @@
 'use client';
 
 import { Product, CartItem, Transaction } from './types';
-import { supabase, isSupabaseMode } from './supabase';
-import { uploadPhoto } from './photo-upload';
-import {
-    getLocalProducts, saveLocalProducts,
-    getLocalTransactions, saveLocalTransactions,
-    PRODUCTS_KEY,
-} from './storage';
+import { getLocalProducts, saveLocalProducts, getLocalTransactions, saveLocalTransactions } from './storage';
 
-// ===== Products API =====
+// ===== Products API (via API Routes → Turso) =====
 
 export async function getProducts(): Promise<Product[]> {
-    if (isSupabaseMode()) {
-        try {
-            const { data, error } = await supabase!.from('products').select('*').order('created_at', { ascending: true });
-            if (!error && data) return data as Product[];
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+    try {
+        const res = await fetch('/api/products');
+        if (!res.ok) throw new Error('API error');
+        return await res.json();
+    } catch {
+        return getLocalProducts();
     }
-    return getLocalProducts();
 }
 
 export async function getProductByBarcode(barcode: string): Promise<Product | null> {
@@ -29,58 +23,52 @@ export async function getProductByBarcode(barcode: string): Promise<Product | nu
 export async function addProduct(product: Omit<Product, 'id'>): Promise<{ success: boolean; product: Product }> {
     const id = `p_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const newProduct: Product = { ...product, id };
-
-    if (isSupabaseMode()) {
-        try {
-            const { error } = await supabase!.from('products').insert({
-                id, barcode: product.barcode || '', name: product.name,
-                category: product.category, stock_quantity: product.stock_quantity || 0,
-                unit: product.unit || 'ชิ้น', image_url: product.image_url || '',
-                tracking_mode: product.tracking_mode || 'quantity',
-                usage_count: 0, status: 'available',
-                cost_price: product.cost_price || 0, source: product.source || '',
-            });
-            if (!error) return { success: true, product: newProduct };
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+    try {
+        const res = await fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newProduct),
+        });
+        if (!res.ok) throw new Error('API error');
+        return { success: true, product: newProduct };
+    } catch {
+        const products = getLocalProducts();
+        products.push(newProduct);
+        saveLocalProducts(products);
+        return { success: true, product: newProduct };
     }
-
-    const products = getLocalProducts();
-    products.push(newProduct);
-    saveLocalProducts(products);
-    return { success: true, product: newProduct };
 }
 
 export async function updateProduct(id: string, updates: Partial<Product>): Promise<{ success: boolean }> {
-    if (isSupabaseMode()) {
-        try {
-            const { error } = await supabase!.from('products').update(updates).eq('id', id);
-            if (!error) return { success: true };
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+    try {
+        const res = await fetch(`/api/products/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+        });
+        return { success: res.ok };
+    } catch {
+        const products = getLocalProducts();
+        const idx = products.findIndex((p) => p.id === id);
+        if (idx === -1) return { success: false };
+        products[idx] = { ...products[idx], ...updates };
+        saveLocalProducts(products);
+        return { success: true };
     }
-
-    const products = getLocalProducts();
-    const idx = products.findIndex((p) => p.id === id);
-    if (idx === -1) return { success: false };
-    products[idx] = { ...products[idx], ...updates };
-    saveLocalProducts(products);
-    return { success: true };
 }
 
 export async function deleteProduct(id: string): Promise<{ success: boolean }> {
-    if (isSupabaseMode()) {
-        try {
-            const { error } = await supabase!.from('products').delete().eq('id', id);
-            if (!error) return { success: true };
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+    try {
+        const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+        return { success: res.ok };
+    } catch {
+        saveLocalProducts(getLocalProducts().filter((p) => p.id !== id));
+        return { success: true };
     }
-
-    const products = getLocalProducts().filter((p) => p.id !== id);
-    saveLocalProducts(products);
-    return { success: true };
 }
 
 export function resetProducts(): void {
-    localStorage.removeItem(PRODUCTS_KEY);
+    localStorage.removeItem('pantry_products');
 }
 
 // ===== Transactions API =====
@@ -90,271 +78,189 @@ export async function withdrawProducts(
     items: CartItem[],
     photo?: string | null
 ): Promise<{ success: boolean; message: string }> {
-    if (isSupabaseMode()) {
-        try {
-            // Upload photo to Supabase Storage if provided
-            let photoUrl: string | null = null;
-            if (photo) {
-                photoUrl = await uploadPhoto(photo);
-            }
-
-            for (const item of items) {
-                const p = item.product;
-                const txId = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-
-                if (p.tracking_mode === 'usage') {
-                    // Fetch current usage_count from DB
-                    const { data: currentProduct } = await supabase!.from('products').select('usage_count').eq('id', p.id).single();
-                    await supabase!.from('products').update({
-                        usage_count: ((currentProduct?.usage_count) || 0) + 1,
-                    }).eq('id', p.id);
-                    await supabase!.from('transactions').insert({
-                        id: txId, user_name: userName, product_name: p.name,
-                        quantity: 1, unit: p.unit, type: 'usage',
-                        photo: photoUrl,
-                    });
-                } else {
-                    // Fetch CURRENT stock from DB to avoid race condition
-                    const { data: currentProduct } = await supabase!.from('products').select('stock_quantity').eq('id', p.id).single();
-                    const currentStock = currentProduct?.stock_quantity ?? p.stock_quantity;
-                    const newStock = Math.max(0, currentStock - item.quantity);
-                    await supabase!.from('products').update({
-                        stock_quantity: newStock,
-                    }).eq('id', p.id);
-                    await supabase!.from('transactions').insert({
-                        id: txId, user_name: userName, product_name: p.name,
-                        quantity: item.quantity, unit: p.unit, type: 'withdraw',
-                        photo: photoUrl,
-                    });
-                }
-            }
-
-            // Fire-and-forget LINE Notify
+    try {
+        // Upload photo if any
+        let photoUrl = '';
+        if (photo) {
             try {
-                const notifyItems = [];
-                for (const item of items) {
-                    const { data: latest } = await supabase!.from('products').select('stock_quantity').eq('id', item.product.id).single();
-                    notifyItems.push({
-                        name: item.product.name,
-                        quantity: item.quantity,
-                        remaining: latest?.stock_quantity ?? '?',
-                    });
-                }
-                fetch('/api/line-notify', {
+                const uploadRes = await fetch('/api/photos/upload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userName, items: notifyItems, timestamp: Date.now() }),
-                }).catch(() => { });
-            } catch { }
-
-            return { success: true, message: 'เบิกสำเร็จ' };
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
-    }
-
-    // localStorage fallback
-    const products = getLocalProducts();
-    const transactions = getLocalTransactions();
-    for (const item of items) {
-        const idx = products.findIndex((p) => p.id === item.product.id);
-        if (idx === -1) continue;
-        const p = products[idx];
-        const txId = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-        if (p.tracking_mode === 'usage') {
-            p.usage_count = (p.usage_count || 0) + 1;
-            transactions.unshift({ id: txId, product_id: p.id, item_name: p.name, user_name: userName, type: 'WITHDRAW', amount: 1, created_at: new Date().toISOString(), photo: photo || undefined });
-        } else {
-            p.stock_quantity = Math.max(0, p.stock_quantity - item.quantity);
-            transactions.unshift({ id: txId, product_id: p.id, item_name: p.name, user_name: userName, type: 'WITHDRAW', amount: item.quantity, created_at: new Date().toISOString(), photo: photo || undefined });
+                    body: JSON.stringify({ photo }),
+                });
+                if (uploadRes.ok) {
+                    const uploadData = await uploadRes.json();
+                    photoUrl = uploadData.url || photo;
+                } else {
+                    photoUrl = photo; // fallback: store base64
+                }
+            } catch {
+                photoUrl = photo; // fallback: store base64
+            }
         }
-    }
-    saveLocalProducts(products);
-    saveLocalTransactions(transactions);
-    return { success: true, message: 'เบิกสำเร็จ' };
-}
 
-// ===== Usage Tracking (ชงใช้/ตักใช้) =====
+        for (const item of items) {
+            const p = item.product;
+            if (p.tracking_mode === 'usage') {
+                await fetch(`/api/products/${p.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ usage_count: (p.usage_count || 0) + 1 }),
+                });
+                await fetch('/api/transactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ product_id: p.id, product_name: p.name, user_name: userName, quantity: 1, unit: p.unit, type: 'withdraw', photo: photoUrl }),
+                });
+            } else {
+                const newStock = Math.max(0, p.stock_quantity - item.quantity);
+                await fetch(`/api/products/${p.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stock_quantity: newStock }),
+                });
+                await fetch('/api/transactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ product_id: p.id, product_name: p.name, user_name: userName, quantity: item.quantity, unit: p.unit, type: 'withdraw', photo: photoUrl }),
+                });
+            }
+        }
 
-export async function recordUsage(
-    userName: string,
-    productId: string
-): Promise<{ success: boolean; message: string }> {
-    if (isSupabaseMode()) {
+        // Fire-and-forget LINE Notify
         try {
-            const { data: product } = await supabase!.from('products').select('*').eq('id', productId).single();
-            if (!product) return { success: false, message: 'ไม่พบสินค้า' };
-            await supabase!.from('products').update({ usage_count: (product.usage_count || 0) + 1 }).eq('id', productId);
-            await supabase!.from('transactions').insert({
-                id: `tx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                user_name: userName, product_name: product.name,
-                quantity: 1, unit: product.unit, type: 'usage',
-            });
-            return { success: true, message: `บันทึกการใช้ ${product.name} สำเร็จ` };
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
-    }
+            const notifyItems = items.map((item) => ({
+                name: item.product.name,
+                quantity: item.quantity,
+                remaining: Math.max(0, item.product.stock_quantity - item.quantity),
+            }));
+            fetch('/api/line-notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userName, items: notifyItems, timestamp: Date.now() }),
+            }).catch(() => { });
+        } catch { }
 
-    const products = getLocalProducts();
-    const idx = products.findIndex((p) => p.id === productId);
-    if (idx === -1) return { success: false, message: 'ไม่พบสินค้า' };
-    const p = products[idx];
-    p.usage_count = (p.usage_count || 0) + 1;
-    saveLocalProducts(products);
-    const transactions = getLocalTransactions();
-    transactions.unshift({ id: `tx_${Date.now()}`, product_id: p.id, item_name: p.name, user_name: userName, type: 'WITHDRAW', amount: 1, created_at: new Date().toISOString() });
-    saveLocalTransactions(transactions);
-    return { success: true, message: `บันทึกการใช้ ${p.name} สำเร็จ` };
+        return { success: true, message: 'เบิกสำเร็จ' };
+    } catch {
+        // localStorage fallback
+        const products = getLocalProducts();
+        const transactions = getLocalTransactions();
+        for (const item of items) {
+            const idx = products.findIndex((p) => p.id === item.product.id);
+            if (idx === -1) continue;
+            const p = products[idx];
+            const txId = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+            if (p.tracking_mode === 'usage') {
+                p.usage_count = (p.usage_count || 0) + 1;
+                transactions.unshift({ id: txId, product_id: p.id, item_name: p.name, user_name: userName, type: 'WITHDRAW', amount: 1, created_at: new Date().toISOString(), photo: photo || undefined });
+            } else {
+                p.stock_quantity = Math.max(0, p.stock_quantity - item.quantity);
+                transactions.unshift({ id: txId, product_id: p.id, item_name: p.name, user_name: userName, type: 'WITHDRAW', amount: item.quantity, created_at: new Date().toISOString(), photo: photo || undefined });
+            }
+        }
+        saveLocalProducts(products);
+        saveLocalTransactions(transactions);
+        return { success: true, message: 'เบิกสำเร็จ' };
+    }
 }
 
-export async function restockProduct(
-    userName: string,
-    productId: string,
-    amount: number
-): Promise<{ success: boolean; message: string }> {
-    if (isSupabaseMode()) {
-        try {
-            const { data: product } = await supabase!.from('products').select('*').eq('id', productId).single();
-            if (!product) return { success: false, message: 'ไม่พบสินค้า' };
-            const newStock = (product.stock_quantity || 0) + amount;
-            await supabase!.from('products').update({ stock_quantity: newStock }).eq('id', productId);
-            await supabase!.from('transactions').insert({
-                id: `tx_${Date.now()}`,
-                user_name: userName, product_name: product.name,
-                quantity: amount, unit: product.unit, type: 'restock',
-            });
-            return { success: true, message: 'เติมสต๊อกสำเร็จ' };
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+export async function recordUsage(userName: string, productId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        const products = await getProducts();
+        const product = products.find((p) => p.id === productId);
+        if (!product) return { success: false, message: 'ไม่พบสินค้า' };
+        await fetch(`/api/products/${productId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usage_count: (product.usage_count || 0) + 1 }),
+        });
+        await fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ product_id: productId, product_name: product.name, user_name: userName, quantity: 1, unit: product.unit, type: 'usage' }),
+        });
+        return { success: true, message: `บันทึกการใช้ ${product.name} สำเร็จ` };
+    } catch {
+        return { success: false, message: 'เกิดข้อผิดพลาด' };
     }
-
-    const products = getLocalProducts();
-    const idx = products.findIndex((p) => p.id === productId);
-    if (idx === -1) return { success: false, message: 'ไม่พบสินค้า' };
-    products[idx].stock_quantity += amount;
-    saveLocalProducts(products);
-    const transactions = getLocalTransactions();
-    transactions.unshift({ id: `tx_${Date.now()}`, product_id: products[idx].id, item_name: products[idx].name, user_name: userName, type: 'RESTOCK', amount, created_at: new Date().toISOString() });
-    saveLocalTransactions(transactions);
-    return { success: true, message: 'เติมสต๊อกสำเร็จ' };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapSupabaseTx(row: any): Transaction {
-    return {
-        id: row.id,
-        product_id: row.product_id || '',
-        item_name: row.product_name || row.item_name || '',
-        user_name: row.user_name || '',
-        type: (row.type || '').toUpperCase() === 'WITHDRAW' || (row.type || '').toLowerCase() === 'withdraw' ? 'WITHDRAW' : 'RESTOCK',
-        amount: row.quantity ?? row.amount ?? 0,
-        created_at: row.created_at || '',
-        photo: row.photo || undefined,
-    };
+export async function restockProduct(userName: string, productId: string, amount: number): Promise<{ success: boolean; message: string }> {
+    try {
+        const products = await getProducts();
+        const product = products.find((p) => p.id === productId);
+        if (!product) return { success: false, message: 'ไม่พบสินค้า' };
+        await fetch(`/api/products/${productId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stock_quantity: product.stock_quantity + amount }),
+        });
+        await fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ product_id: productId, product_name: product.name, user_name: userName, quantity: amount, unit: product.unit, type: 'restock' }),
+        });
+        return { success: true, message: 'เติมสต๊อกสำเร็จ' };
+    } catch {
+        return { success: false, message: 'เกิดข้อผิดพลาด' };
+    }
 }
 
 export async function getTransactions(limit: number = 20): Promise<Transaction[]> {
-    if (isSupabaseMode()) {
-        try {
-            const { data, error } = await supabase!.from('transactions').select('*').order('created_at', { ascending: false }).limit(limit);
-            if (!error && data) return data.map(mapSupabaseTx);
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+    try {
+        const res = await fetch(`/api/transactions?limit=${limit}`);
+        if (!res.ok) throw new Error('API error');
+        return await res.json();
+    } catch {
+        return getLocalTransactions().slice(0, limit);
     }
-    return getLocalTransactions().slice(0, limit);
 }
 
 export async function getAllTransactions(): Promise<Transaction[]> {
-    if (isSupabaseMode()) {
-        try {
-            const { data, error } = await supabase!.from('transactions').select('*').order('created_at', { ascending: false });
-            if (!error && data) return data.map(mapSupabaseTx);
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+    try {
+        const res = await fetch('/api/transactions?all=true');
+        if (!res.ok) throw new Error('API error');
+        return await res.json();
+    } catch {
+        return getLocalTransactions();
     }
-    return getLocalTransactions();
 }
 
 export async function deleteTransaction(id: string): Promise<{ success: boolean }> {
-    if (isSupabaseMode()) {
-        try {
-            // Fetch the full transaction data before deleting
-            const { data: txData } = await supabase!.from('transactions')
-                .select('user_name, product_name, quantity, type')
-                .eq('id', id).single();
-
-            const { error } = await supabase!.from('transactions').delete().eq('id', id);
-            if (!error) {
-                // Restore stock if it was a withdrawal
-                if (txData && (txData.type === 'withdraw' || txData.type === 'WITHDRAW')) {
-                    const { data: productData } = await supabase!.from('products')
-                        .select('id, stock_quantity')
-                        .eq('name', txData.product_name)
-                        .single();
-                    if (productData) {
-                        await supabase!.from('products').update({
-                            stock_quantity: (productData.stock_quantity || 0) + (txData.quantity || 1),
-                        }).eq('id', productData.id);
-                    }
-                }
-                // Decrement user withdrawal count
-                if (txData?.user_name) {
-                    const { data: userData } = await supabase!.from('service_users')
-                        .select('total_withdrawals')
-                        .eq('name', txData.user_name)
-                        .single();
-                    if (userData) {
-                        await supabase!.from('service_users').update({
-                            total_withdrawals: Math.max(0, (userData.total_withdrawals || 1) - 1),
-                        }).eq('name', txData.user_name);
-                    }
-                }
-                return { success: true };
-            }
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
-    }
-    const txns = getLocalTransactions();
-    const txToDelete = txns.find((t) => t.id === id);
-    const filtered = txns.filter((t) => t.id !== id);
-    saveLocalTransactions(filtered);
-    if (txToDelete) {
-        // Restore stock if it was a withdrawal
-        if (txToDelete.type === 'WITHDRAW') {
+    try {
+        const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+        return { success: res.ok };
+    } catch {
+        const txns = getLocalTransactions();
+        const tx = txns.find((t) => t.id === id);
+        saveLocalTransactions(txns.filter((t) => t.id !== id));
+        if (tx?.type === 'WITHDRAW') {
             const products = getLocalProducts();
-            const pIdx = products.findIndex((p) => p.id === txToDelete.product_id || p.name === txToDelete.item_name);
-            if (pIdx !== -1) {
-                products[pIdx].stock_quantity = (products[pIdx].stock_quantity || 0) + (txToDelete.amount || 1);
-                saveLocalProducts(products);
-            }
+            const pIdx = products.findIndex((p) => p.id === tx.product_id || p.name === tx.item_name);
+            if (pIdx !== -1) { products[pIdx].stock_quantity += tx.amount || 1; saveLocalProducts(products); }
         }
-        // Decrement user withdrawal count in localStorage
-        const usersStr = localStorage.getItem('kiattisakUsers');
-        if (usersStr) {
-            const users = JSON.parse(usersStr);
-            const user = users.find((u: { name: string }) => u.name === txToDelete.user_name);
-            if (user) {
-                user.total_withdrawals = Math.max(0, (user.total_withdrawals || 1) - 1);
-                localStorage.setItem('kiattisakUsers', JSON.stringify(users));
-            }
-        }
+        return { success: true };
     }
-    return { success: true };
 }
 
 export async function clearAllTransactions(): Promise<{ success: boolean }> {
-    if (isSupabaseMode()) {
-        try {
-            const { error } = await supabase!.from('transactions').delete().neq('id', '');
-            if (!error) return { success: true };
-        } catch { console.warn('Supabase failed, falling back to localStorage'); }
+    try {
+        const res = await fetch('/api/transactions?all=true', { method: 'DELETE' });
+        return { success: res.ok };
+    } catch {
+        saveLocalTransactions([]);
+        return { success: true };
     }
-    saveLocalTransactions([]);
-    return { success: true };
 }
 
 export async function getTodayUserCount(): Promise<number> {
     const today = new Date().toISOString().slice(0, 10);
     const txns = await getAllTransactions();
-    const uniqueUsers = new Set(
-        txns.filter((t) => t.created_at?.startsWith(today)).map((t) => t.user_name)
-    );
+    const uniqueUsers = new Set(txns.filter((t) => t.created_at?.startsWith(today)).map((t) => t.user_name));
     return uniqueUsers.size;
 }
 
 export function isDemo(): boolean {
-    return !isSupabaseMode();
+    return false; // Always Turso mode now
 }

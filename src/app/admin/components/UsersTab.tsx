@@ -155,8 +155,8 @@ export default function UsersTab({ serviceUsers, setServiceUsers, transactions, 
                                                     <tr key={tx.id}>
                                                         <td>{tx.item_name}</td>
                                                         <td>
-                                                            <span className={`adm-badge ${tx.type === 'WITHDRAW' ? 'adm-badge-orange' : 'adm-badge-green'}`}>
-                                                                {tx.type === 'WITHDRAW' ? '📤 เบิก' : '📥 เติม'}
+                                                            <span className={`adm-badge ${(tx.type?.toUpperCase() === 'WITHDRAW' || tx.type?.toLowerCase() === 'withdraw' || tx.type?.toLowerCase() === 'usage') ? 'adm-badge-orange' : 'adm-badge-green'}`}>
+                                                                {(tx.type?.toUpperCase() === 'WITHDRAW' || tx.type?.toLowerCase() === 'withdraw' || tx.type?.toLowerCase() === 'usage') ? '📤 เบิก' : '📥 เติม'}
                                                             </span>
                                                         </td>
                                                         <td style={{ textAlign: 'center' }}>{tx.amount}</td>

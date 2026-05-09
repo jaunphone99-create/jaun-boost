@@ -90,8 +90,8 @@ export default function TransactionsTab({ transactions, products, setTransaction
         return Array.from(names).sort();
     }, [transactions, start.getTime(), end.getTime()]);
 
-    const totalWithdraw = filteredTransactions.filter(t => t.type === 'WITHDRAW').length;
-    const totalRestock = filteredTransactions.filter(t => t.type === 'RESTOCK').length;
+    const totalWithdraw = filteredTransactions.filter(t => t.type?.toUpperCase() === 'WITHDRAW' || t.type?.toLowerCase() === 'withdraw' || t.type?.toLowerCase() === 'usage').length;
+    const totalRestock = filteredTransactions.filter(t => t.type?.toUpperCase() === 'RESTOCK' || t.type?.toLowerCase() === 'restock').length;
     const uniqueUsers = new Set(filteredTransactions.map(t => t.user_name)).size;
     const usePaginatedTx = usePagination(filteredTransactions, currentPage, rowsPerPage);
 
@@ -105,7 +105,7 @@ export default function TransactionsTab({ transactions, products, setTransaction
     async function handleDeleteTransaction(id: string) {
         const tx = transactions.find(t => t.id === id);
         await deleteTransaction(id);
-        if (tx && tx.type === 'WITHDRAW') {
+        if (tx && (tx.type?.toUpperCase() === 'WITHDRAW' || tx.type?.toLowerCase() === 'withdraw' || tx.type?.toLowerCase() === 'usage')) {
             showToastMsg(`🗑️ ลบรายการแล้ว — คืนสต๊อก ${tx.item_name} +${tx.amount} ชิ้น`);
         } else {
             showToastMsg('🗑️ ลบรายการแล้ว');
@@ -267,8 +267,8 @@ export default function TransactionsTab({ transactions, products, setTransaction
                                         <tr key={tx.id} className={i % 2 === 0 ? '' : 'adm-row-alt'}>
                                             <td><span className="adm-user-badge">{tx.user_name}</span></td>
                                             <td>
-                                                <span className={`adm-type-badge ${tx.type === 'WITHDRAW' ? 'withdraw' : 'restock'}`}>
-                                                    {tx.type === 'WITHDRAW' ? 'เบิก' : 'เติม'}
+                                                <span className={`adm-type-badge ${(tx.type?.toUpperCase() === 'WITHDRAW' || tx.type?.toLowerCase() === 'withdraw' || tx.type?.toLowerCase() === 'usage') ? 'withdraw' : 'restock'}`}>
+                                                    {(tx.type?.toUpperCase() === 'WITHDRAW' || tx.type?.toLowerCase() === 'withdraw' || tx.type?.toLowerCase() === 'usage') ? 'เบิก' : 'เติม'}
                                                 </span>
                                             </td>
                                             <td>{tx.item_name}</td>
